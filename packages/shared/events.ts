@@ -12,5 +12,11 @@ export const SOCKET_EVENTS = {
   MUTE_STATUS: "mute:status",
   WEBRTC_OFFER: "webrtc:offer",
   WEBRTC_ANSWER: "webrtc:answer",
-  WEBRTC_ICE_CANDIDATE: "webrtc:ice-candidate"
+  WEBRTC_ICE_CANDIDATE: "webrtc:ice-candidate",
+  PARTICIPANT_KNOCK: "participant:knock",
+  ADMIT_PARTICIPANT: "host:admit",
+  DENY_PARTICIPANT: "host:deny",
+  KNOCK_ACCEPTED: "participant:knock_accepted",
+  KNOCK_DENIED: "participant:knock_denied",
+  WAITING_ROOM_UPDATE: "host:waiting_room_update"
 } as const;

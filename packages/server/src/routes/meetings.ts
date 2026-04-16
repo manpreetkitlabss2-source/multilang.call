@@ -4,12 +4,11 @@ import { DEFAULT_LANGUAGE } from "@multilang-call/shared";
 import type { MeetingService } from "../services/meetingService.js";
 
 const createMeetingSchema = z.object({
-  hostId: z.string().min(1),
   defaultLanguage: z.enum(["en", "hi", "pa"]).default(DEFAULT_LANGUAGE)
 });
 
 export const registerMeetingRoutes = (
-  app: Express,
+  app: Pick<Express, "post" | "get">,
   meetingService: MeetingService
 ) => {
   app.post("/meetings", async (req, res) => {
@@ -18,7 +17,15 @@ export const registerMeetingRoutes = (
       return res.status(400).json({ error: parsed.error.flatten() });
     }
 
-    const meeting = await meetingService.createMeeting(parsed.data);
+    if (!req.user) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const meeting = await meetingService.createMeeting({
+      hostId: req.user.userId,
+      hostUserId: req.user.userId,
+      defaultLanguage: parsed.data.defaultLanguage
+    });
     return res.status(201).json({
       meeting,
       joinUrl: `/join/${meeting.id}`

@@ -1,5 +1,6 @@
 generator client {
   provider = "prisma-client-js"
+  output   = "./generated/client"
 }
 
 datasource db {
@@ -8,18 +9,74 @@ datasource db {
 }
 
 model Meeting {
-  id              String   @id @default(cuid())
-  hostId          String
-  defaultLanguage String
-  status          String   @default("ACTIVE")
-  createdAt       DateTime @default(now())
+  id                 String   @id @default(cuid())
+  hostId             String
+  defaultLanguage    String
+  status             String   @default("ACTIVE")
+  createdAt          DateTime @default(now())
+  hostUserId         String?
+  scheduledMeetingId String?  @unique
+  admitList          String   @default("[]")
+
+  hostUser         User?             @relation("HostedMeetings", fields: [hostUserId], references: [id])
+  scheduledMeeting ScheduledMeeting? @relation("MeetingScheduledMeeting", fields: [scheduledMeetingId], references: [id])
+  liveSchedule     ScheduledMeeting? @relation("ScheduledMeetingLiveMeeting")
+  magicLinks       MagicLink[]
 }
 
 model ParticipantLogs {
-  id             String   @id @default(cuid())
-  meetingId      String
-  participantId  String
-  eventType      String
-  metadata       Json?
-  createdAt      DateTime @default(now())
+  id            String   @id @default(cuid())
+  meetingId     String
+  participantId String
+  eventType     String
+  metadata      Json?
+  createdAt     DateTime @default(now())
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  displayName  String
+  passwordHash String
+  role         UserRole @default(PARTICIPANT)
+  createdAt    DateTime @default(now())
+
+  hostedMeetings    Meeting[]          @relation("HostedMeetings")
+  magicLinks        MagicLink[]
+  scheduledMeetings ScheduledMeeting[]
+}
+
+model MagicLink {
+  id              String    @id @default(cuid())
+  token           String    @unique
+  meetingId       String
+  inviteeEmail    String?
+  expiresAt       DateTime
+  usedAt          DateTime?
+  createdAt       DateTime  @default(now())
+  createdByUserId String
+
+  meeting   Meeting @relation(fields: [meetingId], references: [id])
+  createdBy User    @relation(fields: [createdByUserId], references: [id])
+}
+
+model ScheduledMeeting {
+  id              String   @id @default(cuid())
+  title           String
+  scheduledAt     DateTime
+  durationMinutes Int      @default(60)
+  timezone        String   @default("UTC")
+  hostId          String
+  meetingId       String?  @unique
+  shareToken      String   @unique
+  createdAt       DateTime @default(now())
+
+  host         User     @relation(fields: [hostId], references: [id])
+  scheduledFor Meeting? @relation("MeetingScheduledMeeting")
+  meeting      Meeting? @relation("ScheduledMeetingLiveMeeting", fields: [meetingId], references: [id])
+}
+
+enum UserRole {
+  HOST
+  PARTICIPANT
 }

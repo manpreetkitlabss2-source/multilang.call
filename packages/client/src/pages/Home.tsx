@@ -1,33 +1,46 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { DEFAULT_LANGUAGE, type CreateMeetingResponse, type SupportedLanguageCode } from "@multilang-call/shared";
+import {
+  DEFAULT_LANGUAGE,
+  type CreateMeetingResponse,
+  type SupportedLanguageCode
+} from "@multilang-call/shared";
+import { useAuth } from "../hooks/useAuth";
+import { apiUrl, createAuthHeaders } from "../lib/api";
 import LanguageSelector from "../components/LanguageSelector";
-
-const apiUrl = import.meta.env.VITE_API_URL ?? "http://localhost:4000";
 
 const Home = () => {
   const navigate = useNavigate();
-  const [hostId, setHostId] = useState("host-demo");
   const [defaultLanguage, setDefaultLanguage] =
     useState<SupportedLanguageCode>(DEFAULT_LANGUAGE);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const { user, token, logout } = useAuth();
 
   const handleCreateMeeting = async () => {
+    if (!token || user?.role !== "HOST") {
+      navigate("/auth", {
+        state: {
+          redirectTo: "/",
+          redirectState: null
+        }
+      });
+      return;
+    }
+
     setIsSubmitting(true);
     try {
       const response = await fetch(`${apiUrl}/meetings`, {
         method: "POST",
         headers: {
-          "Content-Type": "application/json"
+          "Content-Type": "application/json",
+          ...createAuthHeaders(token)
         },
-        body: JSON.stringify({ hostId, defaultLanguage })
+        body: JSON.stringify({ defaultLanguage })
       });
       const data = (await response.json()) as CreateMeetingResponse;
       navigate(`/meet/${data.meeting.id}`, {
         state: {
-          hostId,
-          preferredLanguage: defaultLanguage,
-          displayName: "Host"
+          preferredLanguage: defaultLanguage
         }
       });
     } finally {
@@ -52,14 +65,13 @@ const Home = () => {
         </div>
         <div className="rounded-[32px] bg-sky p-6">
           <div className="space-y-4">
-            <label className="flex flex-col gap-2 text-sm font-medium text-ink">
-              <span>Host identifier</span>
-              <input
-                className="rounded-2xl border border-teal-200 bg-white px-4 py-3 outline-none focus:border-accent"
-                value={hostId}
-                onChange={(event) => setHostId(event.target.value)}
-              />
-            </label>
+            <div className="rounded-[28px] bg-white px-4 py-4">
+              <p className="text-sm font-medium text-ink">
+                {user
+                  ? `Signed in as ${user.displayName} (${user.role.toLowerCase()})`
+                  : "Sign in as a host to create and schedule meetings."}
+              </p>
+            </div>
             <LanguageSelector
               label="Default meeting language"
               value={defaultLanguage}
@@ -71,11 +83,33 @@ const Home = () => {
               disabled={isSubmitting}
               className="w-full rounded-2xl bg-accent px-5 py-4 text-sm font-semibold text-white transition hover:bg-teal-700 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {isSubmitting ? "Creating meeting..." : "Create meeting"}
+              {isSubmitting
+                ? "Creating meeting..."
+                : user?.role === "HOST"
+                  ? "Create meeting"
+                  : "Sign in as host"}
             </button>
+            {user ? (
+              <button
+                type="button"
+                onClick={logout}
+                className="w-full rounded-full px-5 py-3 text-sm font-semibold bg-white/10 text-ink"
+              >
+                Sign out
+              </button>
+            ) : null}
           </div>
         </div>
       </section>
+      <nav className="mt-6 flex justify-center gap-4">
+        <a href="/schedule" className="text-sm font-medium text-accent hover:underline">
+          Schedule a meeting
+        </a>
+        <span className="text-slate-300">|</span>
+        <a href="/auth" className="text-sm font-medium text-accent hover:underline">
+          Sign in / Register
+        </a>
+      </nav>
     </main>
   );
 };

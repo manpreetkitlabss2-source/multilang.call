@@ -16,6 +16,10 @@ export const registerAudioHandlers = (
   pipelineClient: PipelineClient
 ) => {
   socket.on(SOCKET_EVENTS.AUDIO_CHUNK, async (payload: BufferedAudioPayload) => {
+    if (socket.data.pending) {
+      return;
+    }
+
     const key = bufferKey(payload.meetingId, socket.id);
     const chunks = audioBuffers.get(key) ?? [];
     chunks.push(payload.audioBase64);

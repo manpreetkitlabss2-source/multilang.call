@@ -1,9 +1,14 @@
 import Redis from "ioredis";
-import type { Participant, SupportedLanguageCode } from "@multilang-call/shared";
+import type {
+  Participant,
+  SupportedLanguageCode,
+  WaitingParticipant
+} from "@multilang-call/shared";
 
 type LiveParticipant = Participant & { joinedAt: number };
 
 const participantKey = (meetingId: string) => `meeting:${meetingId}.participants`;
+const waitingKey = (meetingId: string) => `meeting:${meetingId}.waiting`;
 const languageRoomKey = (meetingId: string, language: SupportedLanguageCode) =>
   `meeting:${meetingId}.language:${language}`;
 
@@ -22,6 +27,13 @@ export interface RoomManager {
     meetingId: string,
     language: SupportedLanguageCode
   ): Promise<string[]>;
+  addToWaiting(
+    meetingId: string,
+    participant: WaitingParticipant
+  ): Promise<WaitingParticipant[]>;
+  removeFromWaiting(meetingId: string, socketId: string): Promise<WaitingParticipant[]>;
+  getWaitingParticipants(meetingId: string): Promise<WaitingParticipant[]>;
+  isHostOnline(meetingId: string, hostUserId: string): Promise<boolean>;
 }
 
 const redis = new Redis(process.env.REDIS_URL ?? "redis://localhost:6379", {
@@ -44,6 +56,16 @@ const readParticipants = async (meetingId: string): Promise<LiveParticipant[]> =
   await ensureRedis();
   const raw = await redis.hgetall(participantKey(meetingId));
   return Object.values(raw).map((entry) => JSON.parse(entry) as LiveParticipant);
+};
+
+const readWaitingParticipants = async (
+  meetingId: string
+): Promise<WaitingParticipant[]> => {
+  await ensureRedis();
+  const raw = await redis.hgetall(waitingKey(meetingId));
+  return Object.values(raw)
+    .map((entry) => JSON.parse(entry) as WaitingParticipant)
+    .sort((a, b) => a.requestedAt - b.requestedAt);
 };
 
 const writeParticipant = async (meetingId: string, participant: LiveParticipant) => {
@@ -139,5 +161,26 @@ export const createRoomManager = (): RoomManager => ({
   async getSocketsForLanguage(meetingId, language) {
     await ensureRedis();
     return redis.smembers(languageRoomKey(meetingId, language));
+  },
+
+  async addToWaiting(meetingId, participant) {
+    await ensureRedis();
+    await redis.hset(waitingKey(meetingId), participant.socketId, JSON.stringify(participant));
+    return readWaitingParticipants(meetingId);
+  },
+
+  async removeFromWaiting(meetingId, socketId) {
+    await ensureRedis();
+    await redis.hdel(waitingKey(meetingId), socketId);
+    return readWaitingParticipants(meetingId);
+  },
+
+  async getWaitingParticipants(meetingId) {
+    return readWaitingParticipants(meetingId);
+  },
+
+  async isHostOnline(meetingId, hostUserId) {
+    const participants = await readParticipants(meetingId);
+    return participants.some((participant) => participant.participantId === hostUserId);
   }
 });

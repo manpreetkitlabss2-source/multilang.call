@@ -1,6 +1,7 @@
 import type { Server } from "socket.io";
 import type { MeetingService } from "../services/meetingService.js";
 import type { PipelineClient } from "../services/pipelineClient.js";
+import { verifyToken } from "../services/authService.js";
 import { createRoomManager } from "./roomManager.js";
 import { registerMeetingHandlers } from "./meetingHandlers.js";
 import { registerLanguageHandlers } from "./languageHandlers.js";
@@ -12,6 +13,24 @@ export const registerSocketServer = (
   pipelineClient: PipelineClient
 ) => {
   const roomManager = createRoomManager();
+
+  io.use((socket, next) => {
+    const token = socket.handshake.auth.token as string | undefined;
+    if (!token) {
+      socket.data.userId = null;
+      return next();
+    }
+
+    try {
+      const payload = verifyToken(token);
+      socket.data.userId = payload.userId;
+      socket.data.displayName = payload.displayName;
+      socket.data.role = payload.role;
+      return next();
+    } catch {
+      return next(new Error("Invalid token"));
+    }
+  });
 
   io.on("connection", (socket) => {
     registerMeetingHandlers(io, socket, roomManager, meetingService);

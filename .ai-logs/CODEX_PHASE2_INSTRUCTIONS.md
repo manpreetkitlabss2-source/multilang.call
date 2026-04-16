@@ -1,6 +1,6 @@
 # CODEX_PHASE2_INSTRUCTIONS.md
 **Project:** AI-Powered Multilingual Video Calling Web App — Phase 2
-**Extends:** `CODEX_SYSTEM_INSTRUCTIONS.md` (read that file first — all rules from Phase 1 remain in force)
+**Extends:** `./.ai-logs/CODEX_SYSTEM_INSTRUCTIONS.01.md` (read that file first — all rules from Phase 1 remain in force)
 **Stack additions:** JWT (jsonwebtoken), bcryptjs, nanoid, date-fns, nodemailer (or Resend SDK)
 
 ---
