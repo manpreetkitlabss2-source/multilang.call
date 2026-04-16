@@ -1,0 +1,25 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model Meeting {
+  id              String   @id @default(cuid())
+  hostId          String
+  defaultLanguage String
+  status          String   @default("ACTIVE")
+  createdAt       DateTime @default(now())
+}
+
+model ParticipantLogs {
+  id             String   @id @default(cuid())
+  meetingId      String
+  participantId  String
+  eventType      String
+  metadata       Json?
+  createdAt      DateTime @default(now())
+}
