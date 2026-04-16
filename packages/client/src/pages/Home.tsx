@@ -17,13 +17,16 @@ const Home = () => {
   const { user, token, logout } = useAuth();
 
   const handleCreateMeeting = async () => {
-    if (!token || user?.role !== "HOST") {
+    if (!token) {
       navigate("/auth", {
         state: {
           redirectTo: "/",
           redirectState: null
         }
       });
+      return;
+    }
+    if (user?.role !== "HOST") {
       return;
     }
 
@@ -69,7 +72,7 @@ const Home = () => {
               <p className="text-sm font-medium text-ink">
                 {user
                   ? `Signed in as ${user.displayName} (${user.role.toLowerCase()})`
-                  : "Sign in as a host to create and schedule meetings."}
+                  : "Sign in to create or join meetings."}
               </p>
             </div>
             <LanguageSelector
@@ -85,9 +88,11 @@ const Home = () => {
             >
               {isSubmitting
                 ? "Creating meeting..."
-                : user?.role === "HOST"
-                  ? "Create meeting"
-                  : "Sign in as host"}
+                : !user
+                  ? "Sign in to continue"
+                  : user.role === "HOST"
+                    ? "Create meeting"
+                    : "Only hosts can create meetings"}
             </button>
             {user ? (
               <button

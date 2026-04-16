@@ -49,7 +49,17 @@ const Meet = () => {
     inviteToken?: string;
     fromJoin?: boolean;
   } | null) ?? { fromJoin: false };
-  const displayName = locationState.displayName ?? user?.displayName ?? "Guest";
+
+  // Bug 9: restore join state from sessionStorage on refresh
+  const savedJoinState = useMemo(() => {
+    const raw = sessionStorage.getItem(`meeting_join_state_${meetingId}`);
+    if (!raw) return null;
+    try { return JSON.parse(raw) as { displayName?: string; preferredLanguage?: string; inviteToken?: string }; }
+    catch { return null; }
+  }, [meetingId]);
+
+  const displayName = locationState.displayName ?? savedJoinState?.displayName ?? user?.displayName ?? "Guest";
+  const effectiveInviteToken = locationState.inviteToken ?? savedJoinState?.inviteToken ?? null;
   const initialLanguage = locationState.preferredLanguage ?? "en";
   const participantIdRef = useRef(user?.id ?? crypto.randomUUID());
   const preferredLanguageRef = useRef(initialLanguage);
@@ -78,12 +88,37 @@ const Meet = () => {
   const setWaitingParticipants = useMeetingStore((state) => state.setWaitingParticipants);
   const setWaitingForAdmission = useMeetingStore((state) => state.setWaitingForAdmission);
   const setJoinDeniedMessage = useMeetingStore((state) => state.setJoinDeniedMessage);
+  const reset = useMeetingStore((state) => state.reset);
   const enqueueAudio = useUIStore((state) => state.enqueueAudio);
   const setStatus = useTranslationStore((state) => state.setStatus);
 
   useAudioPlayer();
 
+  // Bug 9: persist join state for refresh recovery
+  useEffect(() => {
+    if (locationState.fromJoin) {
+      sessionStorage.setItem(
+        `meeting_join_state_${meetingId}`,
+        JSON.stringify({
+          displayName: locationState.displayName,
+          preferredLanguage: locationState.preferredLanguage,
+          inviteToken: locationState.inviteToken
+        })
+      );
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Bug 11: reset store on unmount
+  useEffect(() => {
+    return () => { reset(); };
+  }, [reset]);
+
   const isHost = Boolean(user && meeting?.hostUserId === user.id);
+
+  // Bug 2c: reset hasSentJoinRef when user.id changes so join fires correctly after re-auth
+  useEffect(() => {
+    hasSentJoinRef.current = false;
+  }, [user?.id]);
 
   useEffect(() => {
     setMeetingId(meetingId);
@@ -94,11 +129,12 @@ const Meet = () => {
   }, [preferredLanguage]);
 
   useEffect(() => {
-    isMutedRef.current = isMuted;
+    isMutedRef.current = isMuted;locationState
   }, [isMuted]);
 
+  // Bug 5: gate fetch on user being hydrated, not just token
   useEffect(() => {
-    if (!token) {
+    if (!token || !user) {
       return;
     }
 
@@ -126,7 +162,7 @@ const Meet = () => {
           caughtError instanceof Error ? caughtError.message : "Unable to load meeting"
         );
       });
-  }, [meetingId, token]);
+  }, [meetingId, token, user]);
 
   useEffect(() => {
     if (!toastMessage) {
@@ -160,15 +196,15 @@ const Meet = () => {
         participantId: participantIdRef.current,
         displayName,
         preferredLanguage,
-        inviteToken: locationState.inviteToken
+        inviteToken: effectiveInviteToken
       });
       setWaitingForAdmission(true);
       setAdmittedToMeeting(false);
     }
   }, [
     displayName,
+    effectiveInviteToken,
     isHost,
-    locationState.inviteToken,
     meeting,
     meetingId,
     preferredLanguage,
@@ -389,7 +425,9 @@ const Meet = () => {
     });
   };
 
+  // Bug 9: clear sessionStorage on leave
   const handleLeave = () => {
+    sessionStorage.removeItem(`meeting_join_state_${meetingId}`);
     socket?.disconnect();
     navigate("/");
   };
@@ -425,12 +463,29 @@ const Meet = () => {
     setInviteEmail("");
   };
 
+  // Bug 7: add back/retry to error screen
   if (meetingError) {
     return (
       <main className="mx-auto max-w-3xl px-6 py-12">
         <section className="rounded-[36px] bg-white/90 p-8 shadow-panel">
           <h1 className="text-3xl font-bold text-ink">Meeting unavailable</h1>
           <p className="mt-3 text-sm text-rose-600">{meetingError}</p>
+          <div className="mt-6 flex gap-3">
+            <button
+              type="button"
+              onClick={() => navigate("/")}
+              className="rounded-2xl bg-accent px-5 py-4 text-sm font-semibold text-white transition hover:bg-teal-700"
+            >
+              Back to home
+            </button>
+            <button
+              type="button"
+              onClick={() => window.location.reload()}
+              className="rounded-2xl bg-slate-100 px-5 py-4 text-sm font-semibold text-ink"
+            >
+              Retry
+            </button>
+          </div>
         </section>
       </main>
     );

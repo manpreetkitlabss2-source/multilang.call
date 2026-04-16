@@ -61,6 +61,11 @@ export const registerAuthRoutes = (app: Pick<Express, "post" | "get">) => {
       return res.status(401).json({ error: "Unauthorized" });
     }
 
-    return res.json(req.user);
+    return res.json({
+      id: req.user.userId,
+      email: req.user.email,
+      displayName: req.user.displayName,
+      role: req.user.role
+    });
   });
 };

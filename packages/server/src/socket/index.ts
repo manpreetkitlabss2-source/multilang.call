@@ -28,7 +28,7 @@ export const registerSocketServer = (
       socket.data.role = payload.role;
       return next();
     } catch {
-      return next(new Error("Invalid token"));
+      return next(new Error("AUTH_EXPIRED"));
     }
   });
 

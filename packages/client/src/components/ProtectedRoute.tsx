@@ -4,13 +4,14 @@ import { useAuthStore } from "../store/authStore";
 
 const ProtectedRoute = ({ children }: { children: ReactNode }) => {
   const token = useAuthStore((state) => state.token);
+  const user = useAuthStore((state) => state.user);
   const isLoading = useAuthStore((state) => state.isLoading);
 
   if (!token) {
     return <Navigate to="/auth" replace />;
   }
 
-  if (isLoading) {
+  if (!user || isLoading) {
     return (
       <main className="mx-auto flex min-h-screen max-w-md items-center px-6 py-12">
         <section className="w-full rounded-[36px] bg-white/90 p-8 text-center shadow-panel">

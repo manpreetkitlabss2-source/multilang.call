@@ -29,13 +29,21 @@ const AuthPage = () => {
   );
 
   const handleSignIn = async () => {
-    await login(signInEmail, signInPassword);
-    navigate(redirectTo, { state: redirectState });
+    try {
+      await login(signInEmail, signInPassword);
+      navigate(redirectTo, { state: redirectState });
+    } catch {
+      // error already set in store
+    }
   };
 
   const handleRegister = async () => {
-    await register(email, displayName, password, role);
-    navigate(redirectTo, { state: redirectState });
+    try {
+      await register(email, displayName, password, role);
+      navigate(redirectTo, { state: redirectState });
+    } catch {
+      // error already set in store
+    }
   };
 
   return (

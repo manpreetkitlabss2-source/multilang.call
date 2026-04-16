@@ -14,6 +14,7 @@ interface MeetingStoreState {
   setWaitingForAdmission: (waitingForAdmission: boolean) => void;
   setJoinDeniedMessage: (joinDeniedMessage: string | null) => void;
   setMuted: (isMuted: boolean) => void;
+  reset: () => void;
 }
 
 export const useMeetingStore = create<MeetingStoreState>((set) => ({
@@ -28,5 +29,13 @@ export const useMeetingStore = create<MeetingStoreState>((set) => ({
   setWaitingParticipants: (waitingParticipants) => set({ waitingParticipants }),
   setWaitingForAdmission: (waitingForAdmission) => set({ waitingForAdmission }),
   setJoinDeniedMessage: (joinDeniedMessage) => set({ joinDeniedMessage }),
-  setMuted: (isMuted) => set({ isMuted })
+  setMuted: (isMuted) => set({ isMuted }),
+  reset: () => set({
+    meetingId: "",
+    participants: [],
+    waitingParticipants: [],
+    waitingForAdmission: false,
+    joinDeniedMessage: null,
+    isMuted: false
+  })
 }));
