@@ -12,6 +12,7 @@ import { createMeetingService } from "./services/meetingService.js";
 import { createPipelineClient } from "./services/pipelineClient.js";
 import { startCleanupService } from "./services/cleanupService.js";
 import { registerSocketServer } from "./socket/index.js";
+import { verifyToken } from "./services/authService.js";
 
 const port = Number(process.env.PORT ?? 4000);
 const app = express();
@@ -37,6 +38,21 @@ const httpServer = createServer(app);
 const io = new Server(httpServer, {
   cors: {
     origin: "*"
+  }
+});
+
+// packages/server/src/socket/index.ts
+io.use((socket, next) => {
+  const token = socket.handshake.auth?.token;
+  if (!token) return next(new Error("AUTH_REQUIRED"));
+
+  try {
+    const payload = verifyToken(token);  // this must throw on bad tokens
+    socket.data.userId = payload.userId;
+    socket.data.displayName = payload.displayName;
+    next();
+  } catch {
+    next(new Error("AUTH_INVALID"));  // ← this causes connect_error on the client
   }
 });
 
