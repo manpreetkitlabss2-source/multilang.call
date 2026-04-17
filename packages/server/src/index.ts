@@ -10,6 +10,7 @@ import { registerSchedulingRoutes } from "./routes/scheduling.js";
 import { registerTokenRoutes } from "./routes/tokens.js";
 import { createMeetingService } from "./services/meetingService.js";
 import { createPipelineClient } from "./services/pipelineClient.js";
+import { startCleanupService } from "./services/cleanupService.js";
 import { registerSocketServer } from "./socket/index.js";
 
 const port = Number(process.env.PORT ?? 4000);
@@ -19,6 +20,7 @@ app.use(express.json({ limit: "2mb" }));
 
 const meetingService = createMeetingService();
 const pipelineClient = createPipelineClient();
+const stopCleanup = startCleanupService();
 
 app.get("/health", (_req, res) => {
   res.json({ ok: true });
@@ -42,4 +44,14 @@ registerSocketServer(io, meetingService, pipelineClient);
 
 httpServer.listen(port, () => {
   console.log(`server listening on ${port}`);
+});
+
+process.on("SIGTERM", () => {
+  stopCleanup();
+  process.exit(0);
+});
+
+process.on("SIGINT", () => {
+  stopCleanup();
+  process.exit(0);
 });

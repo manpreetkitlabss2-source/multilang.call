@@ -139,6 +139,14 @@ export interface MeetingService {
   ): Promise<{ meetingId: string; joinUrl: string } | null>;
   deleteScheduledMeeting(scheduledMeetingId: string, hostId: string): Promise<boolean>;
   addAdmittedParticipant(meetingId: string, participantId: string): Promise<void>;
+  addParticipantToMeeting(
+    meetingId: string,
+    userId: string,
+    role: "HOST" | "PARTICIPANT" | "CO_HOST",
+    preferredLanguage: string
+  ): Promise<void>;
+  endMeeting(meetingId: string): Promise<void>;
+  archiveOldLogs(daysOld?: number): Promise<number>;
 }
 
 export const createMeetingService = (): MeetingService => ({
@@ -147,8 +155,8 @@ export const createMeetingService = (): MeetingService => ({
     await prisma.$executeRawUnsafe(
       `
         INSERT INTO Meeting
-          (id, hostId, defaultLanguage, status, createdAt, hostUserId, scheduledMeetingId, admitList)
-        VALUES (?, ?, ?, 'ACTIVE', NOW(), ?, ?, '[]')
+          (id, hostId, defaultLanguage, status, createdAt, updatedAt, hostUserId, scheduledMeetingId, admitList)
+        VALUES (?, ?, ?, 'ACTIVE', NOW(), NOW(), ?, ?, '[]')
       `,
       id,
       input.hostId,
@@ -266,8 +274,8 @@ export const createMeetingService = (): MeetingService => ({
     await prisma.$executeRawUnsafe(
       `
         INSERT INTO ScheduledMeeting
-          (id, title, scheduledAt, durationMinutes, timezone, hostId, meetingId, shareToken, createdAt)
-        VALUES (?, ?, ?, ?, ?, ?, NULL, ?, NOW())
+          (id, title, scheduledAt, durationMinutes, timezone, hostId, meetingId, shareToken, createdAt, updatedAt)
+        VALUES (?, ?, ?, ?, ?, ?, NULL, ?, NOW(), NOW())
       `,
       id,
       title,
@@ -364,8 +372,8 @@ export const createMeetingService = (): MeetingService => ({
       prisma.$executeRawUnsafe(
         `
           INSERT INTO Meeting
-            (id, hostId, defaultLanguage, status, createdAt, hostUserId, scheduledMeetingId, admitList)
-          VALUES (?, ?, ?, 'ACTIVE', NOW(), ?, ?, '[]')
+            (id, hostId, defaultLanguage, status, createdAt, updatedAt, hostUserId, scheduledMeetingId, admitList)
+          VALUES (?, ?, ?, 'ACTIVE', NOW(), NOW(), ?, ?, '[]')
         `,
         meetingId,
         hostId,
@@ -415,5 +423,38 @@ export const createMeetingService = (): MeetingService => ({
       JSON.stringify([...current]),
       meetingId
     );
+  },
+
+  async addParticipantToMeeting(meetingId, userId, role, preferredLanguage) {
+    const { nanoid: _nanoid } = await import("nanoid");
+    const id = _nanoid(24);
+    await prisma.$executeRawUnsafe(
+      `
+        INSERT INTO MeetingParticipant
+          (id, meetingId, userId, role, preferredLanguage, joinedAt, isOnline, isMuted, createdAt, updatedAt)
+        VALUES (?, ?, ?, ?, ?, NOW(), 1, 0, NOW(), NOW())
+        ON DUPLICATE KEY UPDATE isOnline = 1, updatedAt = NOW()
+      `,
+      id,
+      meetingId,
+      userId,
+      role,
+      preferredLanguage
+    );
+  },
+
+  async endMeeting(meetingId) {
+    await prisma.$executeRawUnsafe(
+      `UPDATE Meeting SET status = 'ENDED', endedAt = NOW(), expiresAt = DATE_ADD(NOW(), INTERVAL 30 DAY), updatedAt = NOW() WHERE id = ?`,
+      meetingId
+    );
+  },
+
+  async archiveOldLogs(daysOld = 90) {
+    const result = await prisma.$executeRawUnsafe(
+      `DELETE FROM ParticipantLog WHERE createdAt < DATE_SUB(NOW(), INTERVAL ? DAY)`,
+      daysOld
+    );
+    return Number(result);
   }
 });

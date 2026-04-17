@@ -69,7 +69,9 @@ const Meet = () => {
     useState<SupportedLanguageCode>(initialLanguage);
   const [meeting, setMeeting] = useState<MeetingRecord | null>(null);
   const [meetingError, setMeetingError] = useState<string | null>(null);
-  const [admittedToMeeting, setAdmittedToMeeting] = useState(false);
+  const admittedToMeeting = useMeetingStore((state) => state.admittedToMeeting);
+  const setAdmittedToMeeting = useMeetingStore((state) => state.setAdmittedToMeeting);
+  const setJoinError = useMeetingStore((state) => state.setJoinError);
   const [invitePanelOpen, setInvitePanelOpen] = useState(false);
   const [inviteEmail, setInviteEmail] = useState("");
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -92,6 +94,9 @@ const Meet = () => {
   const enqueueAudio = useUIStore((state) => state.enqueueAudio);
   const setStatus = useTranslationStore((state) => state.setStatus);
 
+  const joinError = useMeetingStore((state) => state.joinError);
+  const joinErrorCode = useMeetingStore((state) => state.joinErrorCode);
+
   useAudioPlayer();
 
   // Bug 9: persist join state for refresh recovery
@@ -113,6 +118,7 @@ const Meet = () => {
     return () => { reset(); };
   }, [reset]);
 
+
   const isHost = Boolean(user && meeting?.hostUserId === user.id);
 
   // Bug 2c: reset hasSentJoinRef when user.id changes so join fires correctly after re-auth
@@ -129,7 +135,7 @@ const Meet = () => {
   }, [preferredLanguage]);
 
   useEffect(() => {
-    isMutedRef.current = isMuted;locationState
+    isMutedRef.current = isMuted;
   }, [isMuted]);
 
   // Bug 5: gate fetch on user being hydrated, not just token
@@ -188,7 +194,7 @@ const Meet = () => {
         displayName: user.displayName,
         preferredLanguage
       });
-      setAdmittedToMeeting(true);
+      // admittedToMeeting will be set true by HOST_JOIN_SUCCESS event
       setWaitingForAdmission(false);
     } else {
       socket.emit(SOCKET_EVENTS.PARTICIPANT_KNOCK, {
@@ -215,7 +221,7 @@ const Meet = () => {
   ]);
 
   useEffect(() => {
-    if (!socket) {
+    if (!socket) {      
       return;
     }
 
@@ -247,7 +253,7 @@ const Meet = () => {
           .participants
           .map((participant) =>
             participant.socketId === socketId ||
-            (participant.socketId === "local" && socketId === socket.id)
+              (participant.socketId === "local" && socketId === socket.id)
               ? { ...participant, isSpeaking }
               : participant
           )
@@ -279,10 +285,30 @@ const Meet = () => {
       setAdmittedToMeeting(true);
     };
 
-    const handleKnockDenied = () => {
+    const handleKnockDenied = ({ reason }: { reason?: string } = {}) => {
       setWaitingForAdmission(false);
-      setJoinDeniedMessage("The host has declined your request to join.");
+      setJoinDeniedMessage(reason ?? "The host has declined your request to join.");
       setAdmittedToMeeting(false);
+    };
+
+    const handleHostJoinSuccess = () => {
+      setAdmittedToMeeting(true);
+      setWaitingForAdmission(false);
+      setJoinError(null);
+    };
+
+    const handleHostJoinError = (data: { message: string; code: string }) => {
+      setJoinError(data.message, data.code);
+      setAdmittedToMeeting(false);
+      if (data.code === "AUTH_REQUIRED") {
+        navigate("/auth", { state: { redirectTo: `/meet/${meetingId}` } });
+      }
+    };
+
+    const handleSocketError = (err: { code?: string; message?: string }) => {
+      if (err.message) {
+        setToastMessage(`Error: ${err.message}`);
+      }
     };
 
     socket.on(SOCKET_EVENTS.MEETING_STATE, handleMeetingState);
@@ -291,6 +317,9 @@ const Meet = () => {
     socket.on(SOCKET_EVENTS.WAITING_ROOM_UPDATE, handleWaitingRoomUpdate);
     socket.on(SOCKET_EVENTS.KNOCK_ACCEPTED, handleKnockAccepted);
     socket.on(SOCKET_EVENTS.KNOCK_DENIED, handleKnockDenied);
+    socket.on(SOCKET_EVENTS.HOST_JOIN_SUCCESS, handleHostJoinSuccess);
+    socket.on(SOCKET_EVENTS.HOST_JOIN_ERROR, handleHostJoinError);
+    socket.on("error", handleSocketError);
 
     return () => {
       socket.off(SOCKET_EVENTS.MEETING_STATE, handleMeetingState);
@@ -299,14 +328,22 @@ const Meet = () => {
       socket.off(SOCKET_EVENTS.WAITING_ROOM_UPDATE, handleWaitingRoomUpdate);
       socket.off(SOCKET_EVENTS.KNOCK_ACCEPTED, handleKnockAccepted);
       socket.off(SOCKET_EVENTS.KNOCK_DENIED, handleKnockDenied);
+      socket.off(SOCKET_EVENTS.HOST_JOIN_SUCCESS, handleHostJoinSuccess);
+      socket.off(SOCKET_EVENTS.HOST_JOIN_ERROR, handleHostJoinError);
+      socket.off("error", handleSocketError);
     };
   }, [
     displayName,
     enqueueAudio,
     isHost,
+    meetingId,
+    navigate,
+    setAdmittedToMeeting,
     setJoinDeniedMessage,
+    setJoinError,
     setParticipants,
     setStatus,
+    setToastMessage,
     setWaitingForAdmission,
     setWaitingParticipants,
     socket,
@@ -462,6 +499,24 @@ const Meet = () => {
     setToastMessage("Copied invite link to clipboard");
     setInviteEmail("");
   };
+
+  if (joinError && joinErrorCode !== "NOT_HOST") {
+    return (
+      <main className="mx-auto flex min-h-screen max-w-md items-center px-6 py-12">
+        <section className="w-full rounded-[36px] bg-white/90 p-8 shadow-panel text-center">
+          <h1 className="text-2xl font-bold text-rose-600">Unable to join</h1>
+          <p className="mt-4 text-sm text-slate-600">{joinError}</p>
+          <button
+            type="button"
+            onClick={() => navigate("/")}
+            className="mt-6 rounded-2xl bg-accent px-5 py-4 text-sm font-semibold text-white transition hover:bg-teal-700"
+          >
+            Back to home
+          </button>
+        </section>
+      </main>
+    );
+  }
 
   // Bug 7: add back/retry to error screen
   if (meetingError) {

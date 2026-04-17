@@ -13,11 +13,11 @@ export const registerSocketServer = (
   pipelineClient: PipelineClient
 ) => {
   const roomManager = createRoomManager();
-
+  
   io.use((socket, next) => {
     const token = socket.handshake.auth.token as string | undefined;
     if (!token) {
-      socket.data.userId = null;
+      socket.data.userId = undefined;
       return next();
     }
 
@@ -28,7 +28,9 @@ export const registerSocketServer = (
       socket.data.role = payload.role;
       return next();
     } catch {
-      return next(new Error("AUTH_EXPIRED"));
+      // Invalid/expired token — allow connection but without auth (invite flow)
+      socket.data.userId = undefined;
+      return next();
     }
   });
 

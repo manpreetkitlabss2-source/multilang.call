@@ -50,19 +50,34 @@ export const registerMeetingHandlers = (
     }: JoinMeetingPayload) => {
       const meeting = await meetingService.getMeeting(meetingId);
       if (!meeting) {
-        socket.emit("error", { message: "Meeting not found" });
+        socket.emit(SOCKET_EVENTS.HOST_JOIN_ERROR, {
+          message: "Meeting not found",
+          code: "MEETING_NOT_FOUND"
+        });
         return;
       }
 
-      const isHost = meeting.hostUserId === socket.data.userId;
-      if (!isHost) {
-        socket.emit("error", { message: "Participants must wait for host admission" });
+      const userId = socket.data.userId as string | undefined;
+
+      if (!userId) {
+        socket.emit(SOCKET_EVENTS.HOST_JOIN_ERROR, {
+          message: "Authentication required. Please log in before joining.",
+          code: "AUTH_REQUIRED"
+        });
+        return;
+      }
+
+      if (userId !== meeting.hostUserId) {
+        socket.emit(SOCKET_EVENTS.HOST_JOIN_ERROR, {
+          message: "You are not the host of this meeting.",
+          code: "NOT_HOST"
+        });
         return;
       }
 
       const participant: Participant = {
         socketId: socket.id,
-        participantId: socket.data.userId ?? participantId,
+        participantId: userId,
         displayName: socket.data.displayName ?? displayName,
         preferredLanguage,
         isMuted: false,
@@ -77,13 +92,15 @@ export const registerMeetingHandlers = (
       socket.data.isHost = true;
 
       await roomManager.addParticipant(meetingId, participant);
+      await meetingService.addParticipantToMeeting(meetingId, userId, "HOST", preferredLanguage);
+
+      socket.emit(SOCKET_EVENTS.HOST_JOIN_SUCCESS, { meetingId });
       await emitMeetingState(io, meetingId, roomManager, meetingService);
       io.to(`${meetingId}:host`).emit(SOCKET_EVENTS.WAITING_ROOM_UPDATE, {
         waitingParticipants: await roomManager.getWaitingParticipants(meetingId)
       });
     }
   );
-
   socket.on(
     SOCKET_EVENTS.PARTICIPANT_KNOCK,
     async ({
@@ -93,6 +110,7 @@ export const registerMeetingHandlers = (
       preferredLanguage,
       inviteToken
     }: KnockPayload) => {
+      
       const meeting = await meetingService.getMeeting(meetingId);
       if (!meeting) {
         socket.emit("error", { message: "Meeting not found" });
@@ -101,11 +119,25 @@ export const registerMeetingHandlers = (
 
       if (inviteToken) {
         const inviteValidation = await meetingService.validateMagicLink(inviteToken);
-        if (!inviteValidation.valid || inviteValidation.meetingId !== meetingId) {
-          socket.emit("error", {
-            message: inviteValidation.valid ? "Invite does not match meeting" : inviteValidation.reason
-          });
-          return;
+        const tokenInvalid = !inviteValidation.valid || inviteValidation.meetingId !== meetingId;
+
+        if (tokenInvalid) {
+          // If token is "already used", check if participant was previously admitted — allow re-knock
+          const alreadyUsed =
+            !inviteValidation.valid &&
+            (inviteValidation as { reason?: string }).reason === "Invite already used";
+          const admitList: string[] = JSON.parse(meeting.admitList ?? "[]");
+          const wasAdmitted = alreadyUsed && admitList.includes(participantId);
+
+          if (!wasAdmitted) {
+            socket.emit(SOCKET_EVENTS.KNOCK_DENIED, {
+              meetingId,
+              reason: inviteValidation.valid
+                ? "Invite does not match this meeting"
+                : (inviteValidation as { reason?: string }).reason ?? "Invalid invite"
+            });
+            return;
+          }
         }
       }
 
@@ -122,9 +154,15 @@ export const registerMeetingHandlers = (
       socket.data.pending = true;
       socket.data.pendingParticipant = waiter;
       socket.data.pendingInviteToken = inviteToken ?? null;
-      io.to(`${meetingId}:host`).emit(SOCKET_EVENTS.WAITING_ROOM_UPDATE, {
-        waitingParticipants
-      });
+
+      // Emit to host room; also directly to any host socket not yet in the room (race condition guard)
+      const hostRoomUpdate = { waitingParticipants };
+      io.to(`${meetingId}:host`).emit(SOCKET_EVENTS.WAITING_ROOM_UPDATE, hostRoomUpdate);
+      for (const [, s] of io.sockets.sockets) {
+        if (s.data.isHost === true && s.data.meetingId === meetingId && !s.rooms.has(`${meetingId}:host`)) {
+          s.emit(SOCKET_EVENTS.WAITING_ROOM_UPDATE, hostRoomUpdate);
+        }
+      }
     }
   );
 
@@ -169,6 +207,12 @@ export const registerMeetingHandlers = (
         isSpeaking: false
       });
       await meetingService.addAdmittedParticipant(meetingId, waiter.participantId);
+      await meetingService.addParticipantToMeeting(
+        meetingId,
+        waiter.participantId,
+        "PARTICIPANT",
+        waiter.preferredLanguage
+      );
 
       if (typeof targetSocket.data.pendingInviteToken === "string") {
         await meetingService.markMagicLinkUsed(targetSocket.data.pendingInviteToken);
@@ -248,6 +292,7 @@ export const registerMeetingHandlers = (
 
   socket.on("disconnect", async () => {
     const meetingId = socket.data.meetingId as string | undefined;
+    
     if (!meetingId) {
       return;
     }

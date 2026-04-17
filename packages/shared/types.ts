@@ -113,6 +113,20 @@ export interface ScheduledMeetingRecord {
   shareToken: string;
 }
 
+export type ParticipantRole = "HOST" | "CO_HOST" | "PARTICIPANT";
+
+export interface MeetingParticipantRecord {
+  id: string;
+  meetingId: string;
+  userId: string;
+  role: ParticipantRole;
+  preferredLanguage: SupportedLanguageCode;
+  joinedAt: string;
+  leftAt?: string | null;
+  isMuted: boolean;
+  isOnline: boolean;
+}
+
 export interface WaitingParticipant {
   socketId: string;
   participantId: string;
