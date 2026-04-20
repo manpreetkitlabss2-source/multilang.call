@@ -5,6 +5,7 @@ import { buildLanguageFanout } from "./middleware/langRouter.js";
 import { sttStage } from "./stages/stt.js";
 import { translateStage } from "./stages/translate.js";
 import { ttsStage } from "./stages/tts.js";
+import testRouter from "./adapters/test.js";
 
 const app = express();
 const port = Number(process.env.AI_PIPELINE_PORT ?? 5001);
@@ -51,6 +52,8 @@ app.post("/pipeline/translate", async (req, res) => {
 
   res.json({ results });
 });
+
+app.use("/api", testRouter);
 
 app.listen(port, () => {
   console.log(`ai-pipeline listening on ${port}`);
