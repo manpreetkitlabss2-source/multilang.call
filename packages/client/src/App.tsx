@@ -7,6 +7,7 @@ import Meet from "./pages/Meet";
 import Join from "./pages/Join";
 import ScheduleLanding from "./pages/ScheduleLanding";
 import SchedulePage from "./pages/SchedulePage";
+import AudioMeet from "./pages/Audiomeet";
 
 const App = () => {
   useAuth();
@@ -23,6 +24,7 @@ const App = () => {
           </ProtectedRoute>
         }
       />
+      {/* /meeting/:meetingId is kept for backward-compat with older invite links */}
       <Route
         path="/meeting/:meetingId"
         element={
@@ -37,6 +39,14 @@ const App = () => {
         element={
           <ProtectedRoute>
             <SchedulePage />
+          </ProtectedRoute>
+        }
+      />
+       <Route
+        path="/audio/:meetingId"
+        element={
+          <ProtectedRoute>
+            <AudioMeet />
           </ProtectedRoute>
         }
       />

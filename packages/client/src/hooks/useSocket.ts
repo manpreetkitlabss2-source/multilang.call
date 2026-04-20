@@ -44,16 +44,7 @@ export const useSocket = () => {
     });
 
     nextSocket.on("connect", () => {
-      console.log("✅ CONNECTED:", nextSocket.id);
-      setRetryCount(0); // Reset on success
-    });
-
-    nextSocket.on("disconnect", (reason) => {
-      console.log("⚠️ DISCONNECTED:", reason);
-    });
-
-    nextSocket.onAny((event, ...args) => {
-      console.log("📩 EVENT:", event, args);
+      setRetryCount(0);
     });
 
     nextSocket.on("connect_error", (err) => {

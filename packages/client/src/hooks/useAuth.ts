@@ -54,8 +54,10 @@ export const useAuth = () => {
       })
       .catch(() => {
         clearAuth();
+        // "mlc_token" is the Zustand-persist key — clearAuth() resets in-memory state
+        // but does not remove the persisted localStorage entry, so we do it manually.
         localStorage.removeItem("mlc_token");
-        clearAuthStorage();
+        clearAuthStorage(); // removes auth_user + auth_token (legacy keys)
       })
       .finally(() => {
         setLoading(false);
@@ -129,8 +131,10 @@ export const useAuth = () => {
 
   const logout = () => {
     clearAuth();
+    // "mlc_token" is the Zustand-persist key — clearAuth() resets in-memory state
+    // but does not remove the persisted localStorage entry, so we do it manually.
     localStorage.removeItem("mlc_token");
-    clearAuthStorage();
+    clearAuthStorage(); // removes auth_user + auth_token (legacy keys)
     navigate("/");
   };
 

@@ -16,7 +16,8 @@ import { verifyToken } from "./services/authService.js";
 
 const port = Number(process.env.PORT ?? 4000);
 const app = express();
-app.use(cors());
+const allowedOrigin = process.env.CLIENT_URL ?? "http://localhost:5173";
+app.use(cors({ origin: allowedOrigin, credentials: true }));
 app.use(express.json({ limit: "2mb" }));
 
 const meetingService = createMeetingService();
@@ -37,7 +38,8 @@ registerSchedulingRoutes(app);
 const httpServer = createServer(app);
 const io = new Server(httpServer, {
   cors: {
-    origin: "*"
+    origin: allowedOrigin,
+    credentials: true
   }
 });
 

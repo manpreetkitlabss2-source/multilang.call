@@ -42,7 +42,12 @@ const Home = () => {
         body: JSON.stringify({ defaultLanguage })
       });
       const data = (await response.json()) as CreateMeetingResponse;
-      navigate(`/meet/${data.meeting.id}`, {
+      // navigate(`/meet/${data.meeting.id}`, {
+      //   state: {
+      //     preferredLanguage: defaultLanguage
+      //   }
+      // });
+            navigate(`/audio/${data.meeting.id}`, {
         state: {
           preferredLanguage: defaultLanguage
         }
