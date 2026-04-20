@@ -5,23 +5,21 @@ import {
   type MeetingRecord,
   type Participant,
   type SupportedLanguageCode,
-  type TranslationResult,
   type WaitingParticipant
 } from "@multilang-call/shared";
-import LanguageSelector from "../components/LanguageSelector";
 import MeetingControls from "../components/MeetingControls";
+import TranslationOverlay from "../components/TranslationOverlay";
 import TranslationStatus from "../components/TranslationStatus";
 import VideoGrid from "../components/VideoGrid";
-import { useAudioPlayer } from "../hooks/useAudioPlayer";
+import WaitingRoom from "../components/WaitingRoom";
 import { useSocket } from "../hooks/useSocket";
-import { useVAD } from "../hooks/useVAD";
+import { useSpeechRecognition } from "../hooks/useSpeechRecognition";
+import { useTranslatedAudio } from "../hooks/useTranslatedAudio";
 import { useWebRTC } from "../hooks/useWebRTC";
 import { apiUrl, createAuthHeaders } from "../lib/api";
-import { registerAudioWorklet } from "../lib/audioWorklet";
 import { useAuthStore } from "../store/authStore";
 import { useMeetingStore } from "../store/meetingStore";
 import { useTranslationStore } from "../store/translationStore";
-import { useUIStore } from "../store/uiStore";
 
 const createLocalParticipant = (
   preferredLanguage: SupportedLanguageCode,
@@ -49,18 +47,28 @@ const Meet = () => {
     inviteToken?: string;
     fromJoin?: boolean;
   } | null) ?? { fromJoin: false };
-
-  // Bug 9: restore join state from sessionStorage on refresh
   const savedJoinState = useMemo(() => {
     const raw = sessionStorage.getItem(`meeting_join_state_${meetingId}`);
-    if (!raw) return null;
-    try { return JSON.parse(raw) as { displayName?: string; preferredLanguage?: string; inviteToken?: string }; }
-    catch { return null; }
+    if (!raw) {
+      return null;
+    }
+
+    try {
+      return JSON.parse(raw) as {
+        displayName?: string;
+        preferredLanguage?: SupportedLanguageCode;
+        inviteToken?: string;
+      };
+    } catch {
+      return null;
+    }
   }, [meetingId]);
 
-  const displayName = locationState.displayName ?? savedJoinState?.displayName ?? user?.displayName ?? "Guest";
+  const displayName =
+    locationState.displayName ?? savedJoinState?.displayName ?? user?.displayName ?? "Guest";
   const effectiveInviteToken = locationState.inviteToken ?? savedJoinState?.inviteToken ?? null;
-  const initialLanguage = locationState.preferredLanguage ?? "en";
+  const initialLanguage =
+    locationState.preferredLanguage ?? savedJoinState?.preferredLanguage ?? "en";
   const participantIdRef = useRef(user?.id ?? crypto.randomUUID());
   const preferredLanguageRef = useRef(initialLanguage);
   const isMutedRef = useRef(false);
@@ -69,9 +77,6 @@ const Meet = () => {
     useState<SupportedLanguageCode>(initialLanguage);
   const [meeting, setMeeting] = useState<MeetingRecord | null>(null);
   const [meetingError, setMeetingError] = useState<string | null>(null);
-  const admittedToMeeting = useMeetingStore((state) => state.admittedToMeeting);
-  const setAdmittedToMeeting = useMeetingStore((state) => state.setAdmittedToMeeting);
-  const setJoinError = useMeetingStore((state) => state.setJoinError);
   const [invitePanelOpen, setInvitePanelOpen] = useState(false);
   const [inviteEmail, setInviteEmail] = useState("");
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -81,25 +86,37 @@ const Meet = () => {
   const waitingParticipants = useMeetingStore((state) => state.waitingParticipants);
   const waitingForAdmission = useMeetingStore((state) => state.waitingForAdmission);
   const joinDeniedMessage = useMeetingStore((state) => state.joinDeniedMessage);
-  const { localStream, remoteStreams, error } = useWebRTC(socket, participants);
-  const vad = useVAD();
+  const admittedToMeeting = useMeetingStore((state) => state.admittedToMeeting);
   const isMuted = useMeetingStore((state) => state.isMuted);
+  const isVideoEnabled = useMeetingStore((state) => state.isVideoEnabled);
+  const joinError = useMeetingStore((state) => state.joinError);
+  const joinErrorCode = useMeetingStore((state) => state.joinErrorCode);
   const setMeetingId = useMeetingStore((state) => state.setMeetingId);
   const setParticipants = useMeetingStore((state) => state.setParticipants);
   const setMuted = useMeetingStore((state) => state.setMuted);
+  const setVideoEnabled = useMeetingStore((state) => state.setVideoEnabled);
   const setWaitingParticipants = useMeetingStore((state) => state.setWaitingParticipants);
   const setWaitingForAdmission = useMeetingStore((state) => state.setWaitingForAdmission);
   const setJoinDeniedMessage = useMeetingStore((state) => state.setJoinDeniedMessage);
-  const reset = useMeetingStore((state) => state.reset);
-  const enqueueAudio = useUIStore((state) => state.enqueueAudio);
-  const setStatus = useTranslationStore((state) => state.setStatus);
+  const setAdmittedToMeeting = useMeetingStore((state) => state.setAdmittedToMeeting);
+  const setJoinError = useMeetingStore((state) => state.setJoinError);
+  const resetMeetingStore = useMeetingStore((state) => state.reset);
+  const subtitle = useTranslationStore((state) => state.subtitle);
+  const resetTranslationStore = useTranslationStore((state) => state.reset);
+  const { localStream, remoteStreams, error } = useWebRTC(socket, participants);
 
-  const joinError = useMeetingStore((state) => state.joinError);
-  const joinErrorCode = useMeetingStore((state) => state.joinErrorCode);
+  const isHost = Boolean(user && meeting?.hostUserId === user.id);
 
-  useAudioPlayer();
+  useTranslatedAudio(socket);
+  useSpeechRecognition(
+    socket,
+    meetingId,
+    participantIdRef.current,
+    preferredLanguage,
+    isMuted,
+    admittedToMeeting
+  );
 
-  // Bug 9: persist join state for refresh recovery
   useEffect(() => {
     if (locationState.fromJoin) {
       sessionStorage.setItem(
@@ -111,17 +128,15 @@ const Meet = () => {
         })
       );
     }
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [locationState, meetingId]);
 
-  // Bug 11: reset store on unmount
   useEffect(() => {
-    return () => { reset(); };
-  }, [reset]);
+    return () => {
+      resetMeetingStore();
+      resetTranslationStore();
+    };
+  }, [resetMeetingStore, resetTranslationStore]);
 
-
-  const isHost = Boolean(user && meeting?.hostUserId === user.id);
-
-  // Bug 2c: reset hasSentJoinRef when user.id changes so join fires correctly after re-auth
   useEffect(() => {
     hasSentJoinRef.current = false;
   }, [user?.id]);
@@ -138,7 +153,6 @@ const Meet = () => {
     isMutedRef.current = isMuted;
   }, [isMuted]);
 
-  // Bug 5: gate fetch on user being hydrated, not just token
   useEffect(() => {
     if (!token || !user) {
       return;
@@ -159,8 +173,8 @@ const Meet = () => {
         }
 
         setMeeting(data.meeting);
-        if (data.meeting.defaultLanguage) {
-          setPreferredLanguage((current) => current ?? data.meeting!.defaultLanguage);
+        if (data.meeting.defaultLanguage && !locationState.preferredLanguage) {
+          setPreferredLanguage(data.meeting.defaultLanguage);
         }
       })
       .catch((caughtError) => {
@@ -168,7 +182,7 @@ const Meet = () => {
           caughtError instanceof Error ? caughtError.message : "Unable to load meeting"
         );
       });
-  }, [meetingId, token, user]);
+  }, [locationState.preferredLanguage, meetingId, token, user]);
 
   useEffect(() => {
     if (!toastMessage) {
@@ -194,7 +208,6 @@ const Meet = () => {
         displayName: user.displayName,
         preferredLanguage
       });
-      // admittedToMeeting will be set true by HOST_JOIN_SUCCESS event
       setWaitingForAdmission(false);
     } else {
       socket.emit(SOCKET_EVENTS.PARTICIPANT_KNOCK, {
@@ -214,6 +227,7 @@ const Meet = () => {
     meeting,
     meetingId,
     preferredLanguage,
+    setAdmittedToMeeting,
     setJoinDeniedMessage,
     setWaitingForAdmission,
     socket,
@@ -221,7 +235,7 @@ const Meet = () => {
   ]);
 
   useEffect(() => {
-    if (!socket) {      
+    if (!socket) {
       return;
     }
 
@@ -248,27 +262,13 @@ const Meet = () => {
       isSpeaking: boolean;
     }) => {
       setParticipants(
-        useMeetingStore
-          .getState()
-          .participants
-          .map((participant) =>
-            participant.socketId === socketId ||
-              (participant.socketId === "local" && socketId === socket.id)
-              ? { ...participant, isSpeaking }
-              : participant
-          )
+        useMeetingStore.getState().participants.map((participant) =>
+          participant.socketId === socketId ||
+          (participant.socketId === "local" && socketId === socket.id)
+            ? { ...participant, isSpeaking }
+            : participant
+        )
       );
-    };
-
-    const handleTranslatedAudio = (payload: TranslationResult) => {
-      setStatus("ready");
-      enqueueAudio({
-        id: `${payload.participantId}-${Date.now()}`,
-        participantId: payload.participantId,
-        targetLanguage: payload.targetLanguage,
-        audioBase64: payload.audioBase64,
-        transcript: payload.translatedText
-      });
     };
 
     const handleWaitingRoomUpdate = ({
@@ -305,7 +305,7 @@ const Meet = () => {
       }
     };
 
-    const handleSocketError = (err: { code?: string; message?: string }) => {
+    const handleSocketError = (err: { message?: string }) => {
       if (err.message) {
         setToastMessage(`Error: ${err.message}`);
       }
@@ -313,7 +313,6 @@ const Meet = () => {
 
     socket.on(SOCKET_EVENTS.MEETING_STATE, handleMeetingState);
     socket.on(SOCKET_EVENTS.SPEAKING_STATUS, handleSpeakingStatus);
-    socket.on(SOCKET_EVENTS.AUDIO_TRANSLATED, handleTranslatedAudio);
     socket.on(SOCKET_EVENTS.WAITING_ROOM_UPDATE, handleWaitingRoomUpdate);
     socket.on(SOCKET_EVENTS.KNOCK_ACCEPTED, handleKnockAccepted);
     socket.on(SOCKET_EVENTS.KNOCK_DENIED, handleKnockDenied);
@@ -324,7 +323,6 @@ const Meet = () => {
     return () => {
       socket.off(SOCKET_EVENTS.MEETING_STATE, handleMeetingState);
       socket.off(SOCKET_EVENTS.SPEAKING_STATUS, handleSpeakingStatus);
-      socket.off(SOCKET_EVENTS.AUDIO_TRANSLATED, handleTranslatedAudio);
       socket.off(SOCKET_EVENTS.WAITING_ROOM_UPDATE, handleWaitingRoomUpdate);
       socket.off(SOCKET_EVENTS.KNOCK_ACCEPTED, handleKnockAccepted);
       socket.off(SOCKET_EVENTS.KNOCK_DENIED, handleKnockDenied);
@@ -334,7 +332,6 @@ const Meet = () => {
     };
   }, [
     displayName,
-    enqueueAudio,
     isHost,
     meetingId,
     navigate,
@@ -342,86 +339,11 @@ const Meet = () => {
     setJoinDeniedMessage,
     setJoinError,
     setParticipants,
-    setStatus,
-    setToastMessage,
     setWaitingForAdmission,
     setWaitingParticipants,
     socket,
     user?.displayName
   ]);
-
-  useEffect(() => {
-    if (!admittedToMeeting || !localStream || !socket) {
-      return;
-    }
-
-    const audioTrack = localStream.getAudioTracks()[0];
-    if (!audioTrack) {
-      return;
-    }
-
-    let audioContext: AudioContext | null = null;
-    let source: MediaStreamAudioSourceNode | null = null;
-    let processor: AudioWorkletNode | null = null;
-    let mounted = true;
-
-    const bootstrap = async () => {
-      audioContext = new AudioContext();
-      await registerAudioWorklet(audioContext);
-      source = audioContext.createMediaStreamSource(new MediaStream([audioTrack]));
-      processor = new AudioWorkletNode(audioContext, "pcm-processor");
-      processor.port.onmessage = (event: MessageEvent<Float32Array>) => {
-        if (!mounted) {
-          return;
-        }
-
-        const samples = event.data;
-        const bytes = new Uint8Array(samples.length * 2);
-
-        samples.forEach((sample, index) => {
-          const pcm = Math.max(-1, Math.min(1, sample));
-          const value = pcm < 0 ? pcm * 0x8000 : pcm * 0x7fff;
-          const int16 = Math.round(value);
-          bytes[index * 2] = int16 & 0xff;
-          bytes[index * 2 + 1] = (int16 >> 8) & 0xff;
-        });
-
-        const averageLevel =
-          samples.reduce((sum, sample) => sum + Math.abs(sample), 0) /
-          Math.max(samples.length, 1);
-
-        setStatus(vad.isLikelySilence(samples) ? "translating" : "capturing");
-
-        let binary = "";
-        bytes.forEach((byte) => {
-          binary += String.fromCharCode(byte);
-        });
-
-        socket.emit(SOCKET_EVENTS.AUDIO_CHUNK, {
-          meetingId,
-          participantId: participantIdRef.current,
-          sourceLanguage: preferredLanguage,
-          audioBase64: btoa(binary),
-          averageLevel
-        });
-      };
-
-      const silentGain = audioContext.createGain();
-      silentGain.gain.value = 0;
-      source.connect(processor);
-      processor.connect(silentGain);
-      silentGain.connect(audioContext.destination);
-    };
-
-    void bootstrap();
-
-    return () => {
-      mounted = false;
-      processor?.disconnect();
-      source?.disconnect();
-      void audioContext?.close();
-    };
-  }, [admittedToMeeting, localStream, meetingId, preferredLanguage, setStatus, socket, vad]);
 
   const participantList = useMemo(
     () =>
@@ -447,6 +369,14 @@ const Meet = () => {
     socket?.emit(SOCKET_EVENTS.MUTE_STATUS, { meetingId, isMuted: nextMuted });
   };
 
+  const handleToggleVideo = () => {
+    const nextEnabled = !isVideoEnabled;
+    setVideoEnabled(nextEnabled);
+    localStream?.getVideoTracks().forEach((track) => {
+      track.enabled = nextEnabled;
+    });
+  };
+
   const handleLanguageChange = (nextLanguage: SupportedLanguageCode) => {
     setPreferredLanguage(nextLanguage);
     setParticipants(
@@ -462,7 +392,6 @@ const Meet = () => {
     });
   };
 
-  // Bug 9: clear sessionStorage on leave
   const handleLeave = () => {
     sessionStorage.removeItem(`meeting_join_state_${meetingId}`);
     socket?.disconnect();
@@ -503,7 +432,7 @@ const Meet = () => {
   if (joinError && joinErrorCode !== "NOT_HOST") {
     return (
       <main className="mx-auto flex min-h-screen max-w-md items-center px-6 py-12">
-        <section className="w-full rounded-[36px] bg-white/90 p-8 shadow-panel text-center">
+        <section className="w-full rounded-[36px] bg-white/90 p-8 text-center shadow-panel">
           <h1 className="text-2xl font-bold text-rose-600">Unable to join</h1>
           <p className="mt-4 text-sm text-slate-600">{joinError}</p>
           <button
@@ -518,7 +447,6 @@ const Meet = () => {
     );
   }
 
-  // Bug 7: add back/retry to error screen
   if (meetingError) {
     return (
       <main className="mx-auto max-w-3xl px-6 py-12">
@@ -536,7 +464,7 @@ const Meet = () => {
             <button
               type="button"
               onClick={() => window.location.reload()}
-              className="rounded-2xl bg-slate-100 px-5 py-4 text-sm font-semibold text-ink"
+              className="rounded-full px-5 py-3 text-sm font-semibold bg-white/10 text-ink"
             >
               Retry
             </button>
@@ -550,29 +478,29 @@ const Meet = () => {
     <main className="mx-auto max-w-7xl px-6 py-8">
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_340px]">
         <section className="space-y-6">
-          <header className="rounded-[32px] bg-white/90 p-6 shadow-panel">
-            <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
+          <header className="rounded-[40px] bg-white/90 p-6 shadow-panel">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
               <div>
                 <p className="text-xs font-semibold uppercase tracking-[0.25em] text-accent">
                   Meeting room
                 </p>
                 <h1 className="mt-2 text-3xl font-bold text-ink">{meetingId}</h1>
-                <p className="mt-2 text-sm text-slate-600">
-                  Original room audio stays at 20% volume while translated speech is queued
-                  and played sequentially at full volume.
+                <p className="mt-2 max-w-2xl text-sm text-slate-600">
+                  WebRTC keeps everyone live on camera while translated playback follows
+                  your selected listening language.
+                </p>
+                <p className="mt-3 inline-flex rounded-full bg-sky px-4 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-accent">
+                  Listening in {preferredLanguage.toUpperCase()}
                 </p>
                 {error ? <p className="mt-3 text-sm text-rose-600">{error}</p> : null}
-              </div>
-              <div className="w-full max-w-xs">
-                <LanguageSelector value={preferredLanguage} onChange={handleLanguageChange} />
               </div>
             </div>
           </header>
 
           {waitingForAdmission ? (
             <section className="rounded-[40px] bg-white/90 p-12 text-center shadow-panel">
-              <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-teal-100">
-                <span className="absolute inline-flex h-16 w-16 animate-ping rounded-full bg-teal-200 opacity-60" />
+              <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-sky">
+                <span className="absolute inline-flex h-16 w-16 animate-ping rounded-full bg-sky opacity-60" />
                 <span className="relative h-6 w-6 rounded-full bg-accent" />
               </div>
               <h2 className="mt-6 text-2xl font-bold text-ink">
@@ -581,7 +509,7 @@ const Meet = () => {
               <p className="mt-2 text-sm text-slate-600">
                 The host will let you in shortly.
               </p>
-              <p className="mt-6 inline-flex rounded-full bg-teal-100 px-4 py-2 text-xs font-semibold uppercase tracking-[0.22em] text-accent">
+              <p className="mt-6 inline-flex rounded-full bg-sky px-4 py-2 text-xs font-semibold uppercase tracking-[0.22em] text-accent">
                 Meeting {meetingId}
               </p>
             </section>
@@ -603,10 +531,16 @@ const Meet = () => {
                 participants={participantList}
                 localStream={localStream}
                 remoteStreams={remoteStreams}
+                localPreferredLanguage={preferredLanguage}
+                isLocalVideoEnabled={isVideoEnabled}
               />
               <MeetingControls
                 isMuted={isMuted}
+                isVideoEnabled={isVideoEnabled}
+                preferredLanguage={preferredLanguage}
                 onToggleMute={handleToggleMute}
+                onToggleVideo={handleToggleVideo}
+                onLanguageChange={handleLanguageChange}
                 onLeave={handleLeave}
               />
             </>
@@ -617,65 +551,31 @@ const Meet = () => {
           <TranslationStatus />
 
           {isHost && waitingParticipants.length > 0 ? (
-            <section className="rounded-3xl bg-white/90 p-5 shadow-panel">
-              <div className="flex items-center justify-between">
-                <h2 className="text-lg font-semibold text-ink">Waiting to join</h2>
-                <span className="inline-flex rounded-full bg-teal-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-accent">
-                  {waitingParticipants.length}
-                </span>
-              </div>
-              <ul className="mt-4 space-y-3">
-                {waitingParticipants.map((waiter) => (
-                  <li
-                    key={waiter.socketId}
-                    className="flex items-center justify-between rounded-2xl bg-slate-50 px-4 py-3"
-                  >
-                    <div>
-                      <p className="text-sm font-semibold text-ink">{waiter.displayName}</p>
-                      <p className="text-xs uppercase tracking-[0.16em] text-slate-500">
-                        {waiter.preferredLanguage}
-                      </p>
-                    </div>
-                    <div className="flex gap-2">
-                      <button
-                        type="button"
-                        onClick={() =>
-                          socket?.emit(SOCKET_EVENTS.ADMIT_PARTICIPANT, {
-                            meetingId,
-                            targetSocketId: waiter.socketId
-                          })
-                        }
-                        className="rounded-full bg-accent px-4 py-2 text-xs font-semibold text-white"
-                      >
-                        Admit
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          socket?.emit(SOCKET_EVENTS.DENY_PARTICIPANT, {
-                            meetingId,
-                            targetSocketId: waiter.socketId
-                          })
-                        }
-                        className="rounded-full bg-slate-200 px-4 py-2 text-xs font-semibold text-slate-700"
-                      >
-                        Deny
-                      </button>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            </section>
+            <WaitingRoom
+              waitingParticipants={waitingParticipants}
+              onAdmit={(targetSocketId) =>
+                socket?.emit(SOCKET_EVENTS.ADMIT_PARTICIPANT, {
+                  meetingId,
+                  targetSocketId
+                })
+              }
+              onDeny={(targetSocketId) =>
+                socket?.emit(SOCKET_EVENTS.DENY_PARTICIPANT, {
+                  meetingId,
+                  targetSocketId
+                })
+              }
+            />
           ) : null}
 
           {isHost ? (
-            <section className="rounded-3xl bg-white/90 p-5 shadow-panel">
+            <section className="rounded-[36px] bg-white/90 p-5 shadow-panel">
               <button
                 type="button"
                 onClick={() => setInvitePanelOpen((current) => !current)}
-                className="w-full rounded-2xl bg-sky px-4 py-3 text-left text-sm font-medium text-accent"
+                className="w-full rounded-2xl bg-accent px-5 py-4 text-left text-sm font-semibold text-white transition hover:bg-teal-700"
               >
-                Invite participants {invitePanelOpen ? "▴" : "▾"}
+                Invite participants {invitePanelOpen ? "Hide" : "Show"}
               </button>
               {invitePanelOpen ? (
                 <div className="mt-4 space-y-3">
@@ -710,13 +610,13 @@ const Meet = () => {
             </section>
           ) : null}
 
-          <section className="rounded-3xl bg-white/90 p-5 shadow-panel">
+          <section className="rounded-[36px] bg-white/90 p-5 shadow-panel">
             <h2 className="text-lg font-semibold text-ink">Participants</h2>
             <ul className="mt-4 space-y-3">
               {participantList.map((participant) => (
                 <li
                   key={participant.socketId}
-                  className="flex items-center justify-between rounded-2xl bg-slate-50 px-4 py-3"
+                  className="flex items-center justify-between rounded-[28px] bg-sky px-4 py-3"
                 >
                   <div>
                     <p className="text-sm font-semibold text-ink">{participant.displayName}</p>
@@ -734,8 +634,10 @@ const Meet = () => {
         </aside>
       </div>
 
+      <TranslationOverlay subtitle={subtitle} />
+
       {toastMessage ? (
-        <div className="fixed bottom-6 right-6 rounded-2xl bg-ink px-5 py-3 text-sm text-white shadow-panel">
+        <div className="fixed bottom-6 right-6 rounded-[28px] bg-ink px-5 py-3 text-sm text-white shadow-panel">
           {toastMessage}
         </div>
       ) : null}

@@ -9,6 +9,16 @@ interface AuthResponse {
   token: string;
 }
 
+const syncAuthStorage = (user: AuthUser, token: string) => {
+  localStorage.setItem("auth_user", JSON.stringify(user));
+  localStorage.setItem("auth_token", token);
+};
+
+const clearAuthStorage = () => {
+  localStorage.removeItem("auth_user");
+  localStorage.removeItem("auth_token");
+};
+
 export const useAuth = () => {
   const navigate = useNavigate();
   const user = useAuthStore((state) => state.user);
@@ -40,10 +50,12 @@ export const useAuth = () => {
       })
       .then((validatedUser) => {
         setAuth(validatedUser, token);
+        syncAuthStorage(validatedUser, token);
       })
       .catch(() => {
         clearAuth();
         localStorage.removeItem("mlc_token");
+        clearAuthStorage();
       })
       .finally(() => {
         setLoading(false);
@@ -68,6 +80,7 @@ export const useAuth = () => {
       }
 
       setAuth(data.user, data.token);
+      syncAuthStorage(data.user, data.token);
       return data;
     } catch (caughtError) {
       const message =
@@ -102,6 +115,7 @@ export const useAuth = () => {
       }
 
       setAuth(data.user, data.token);
+      syncAuthStorage(data.user, data.token);
       return data;
     } catch (caughtError) {
       const message =
@@ -116,6 +130,7 @@ export const useAuth = () => {
   const logout = () => {
     clearAuth();
     localStorage.removeItem("mlc_token");
+    clearAuthStorage();
     navigate("/");
   };
 

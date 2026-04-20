@@ -12,14 +12,17 @@
     "format": "echo \"No formatting configured for ai-pipeline\""
   },
   "dependencies": {
+    "@aws-sdk/client-polly": "^3.917.0",
     "@deepgram/sdk": "^5.0.0",
     "@multilang-call/shared": "*",
+    "deepl-node": "^1.18.0",
     "express": "^4.21.1",
     "ioredis": "^5.4.1",
     "multer": "^2.1.1"
   },
   "devDependencies": {
     "@types/express": "^5.0.0",
+    "@types/multer": "^1.4.12",
     "@types/node": "^22.19.17",
     "tsx": "^4.19.1",
     "typescript": "^5.6.3"

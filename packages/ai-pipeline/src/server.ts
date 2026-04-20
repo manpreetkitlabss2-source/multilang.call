@@ -1,5 +1,9 @@
 import express from "express";
-import type { TranslationRequest, TranslationResult } from "@multilang-call/shared";
+import type {
+  SupportedLanguageCode,
+  TranslationRequest,
+  TranslationResult
+} from "@multilang-call/shared";
 import { normalizeAudioBuffer } from "./middleware/audioBuffer.js";
 import { buildLanguageFanout } from "./middleware/langRouter.js";
 import { sttStage } from "./stages/stt.js";
@@ -44,6 +48,40 @@ app.post("/pipeline/translate", async (req, res) => {
       sourceLanguage: request.sourceLanguage,
       targetLanguage,
       transcript,
+      translatedText: translation.translatedText,
+      audioBase64,
+      cacheHit: translation.cacheHit
+    });
+  }
+
+  res.json({ results });
+});
+
+interface TextTranslateRequest {
+  meetingId: string;
+  participantId: string;
+  sourceLanguage: SupportedLanguageCode;
+  targetLanguages: SupportedLanguageCode[];
+  text: string;
+}
+
+app.post("/pipeline/translate-text", async (req, res) => {
+  const { text, sourceLanguage, targetLanguages, meetingId, participantId } =
+    req.body as TextTranslateRequest;
+
+  const targets = buildLanguageFanout(sourceLanguage, targetLanguages);
+  const results: TranslationResult[] = [];
+
+  for (const targetLanguage of targets) {
+    const translation = await translateStage.run(text, sourceLanguage, targetLanguage);
+    const audioBase64 = await ttsStage.run(translation.translatedText, targetLanguage);
+
+    results.push({
+      meetingId,
+      participantId,
+      sourceLanguage,
+      targetLanguage,
+      transcript: text,
       translatedText: translation.translatedText,
       audioBase64,
       cacheHit: translation.cacheHit

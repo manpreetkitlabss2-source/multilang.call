@@ -50,6 +50,13 @@ export interface BufferedAudioPayload {
   averageLevel: number;
 }
 
+export interface TranscriptPayload {
+  meetingId: string;
+  participantId: string;
+  sourceLanguage: SupportedLanguageCode;
+  text: string;
+}
+
 export interface TranslationRequest {
   meetingId: string;
   participantId: string;
@@ -133,6 +140,10 @@ export interface WaitingParticipant {
   displayName: string;
   preferredLanguage: SupportedLanguageCode;
   requestedAt: number;
+}
+
+export interface VideoParticipant extends Participant {
+  isVideoEnabled: boolean;
 }
 
 export const createEmptyMeetingState = (meetingId: string): MeetingState => ({

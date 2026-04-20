@@ -1,5 +1,10 @@
 import type { Server, Socket } from "socket.io";
-import { SOCKET_EVENTS, type BufferedAudioPayload } from "@multilang-call/shared";
+import {
+  SOCKET_EVENTS,
+  type BufferedAudioPayload,
+  type SupportedLanguageCode,
+  type TranscriptPayload
+} from "@multilang-call/shared";
 import type { PipelineClient } from "../services/pipelineClient.js";
 import type { RoomManager } from "./roomManager.js";
 
@@ -67,6 +72,61 @@ export const registerAudioHandlers = (
         SOCKET_EVENTS.AUDIO_TRANSLATED,
         result
       );
+    }
+  });
+
+  socket.on(SOCKET_EVENTS.TRANSCRIPT_READY, async (payload: TranscriptPayload) => {
+    if (socket.data.pending) {
+      return;
+    }
+
+    const { meetingId, participantId, sourceLanguage, text } = payload;
+
+    await roomManager.setSpeaking(meetingId, socket.id, true);
+    io.to(meetingId).emit(SOCKET_EVENTS.SPEAKING_STATUS, {
+      socketId: socket.id,
+      isSpeaking: true
+    });
+
+    const participants = await roomManager.getMeetingParticipants(meetingId);
+    const targetLanguages = [
+      ...new Set(
+        participants
+          .map((participant) => participant.preferredLanguage)
+          .filter((language) => language !== sourceLanguage)
+      )
+    ] as SupportedLanguageCode[];
+
+    try {
+      if (targetLanguages.length > 0) {
+        const results = await pipelineClient.translateText({
+          meetingId,
+          participantId,
+          sourceLanguage,
+          targetLanguages,
+          text
+        });
+
+        for (const result of results) {
+          io.to(`${meetingId}:${result.targetLanguage}`).emit(
+            SOCKET_EVENTS.AUDIO_TRANSLATED,
+            result
+          );
+        }
+      }
+
+      io.to(meetingId).emit(SOCKET_EVENTS.TRANSLATION_STATUS, {
+        socketId: socket.id,
+        participantId,
+        sourceLanguage,
+        transcript: text
+      });
+    } finally {
+      await roomManager.setSpeaking(meetingId, socket.id, false);
+      io.to(meetingId).emit(SOCKET_EVENTS.SPEAKING_STATUS, {
+        socketId: socket.id,
+        isSpeaking: false
+      });
     }
   });
 };

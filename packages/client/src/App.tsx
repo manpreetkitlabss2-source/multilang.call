@@ -23,6 +23,14 @@ const App = () => {
           </ProtectedRoute>
         }
       />
+      <Route
+        path="/meeting/:meetingId"
+        element={
+          <ProtectedRoute>
+            <Meet />
+          </ProtectedRoute>
+        }
+      />
       <Route path="/join/:meetingId" element={<Join />} />
       <Route
         path="/schedule"

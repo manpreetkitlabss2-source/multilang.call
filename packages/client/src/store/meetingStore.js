@@ -1,0 +1,37 @@
+import { create } from "zustand";
+export const useMeetingStore = create((set) => ({
+    meetingId: "",
+    participants: [],
+    waitingParticipants: [],
+    waitingForAdmission: false,
+    admittedToMeeting: false,
+    joinDeniedMessage: null,
+    joinError: null,
+    joinErrorCode: null,
+    userRole: null,
+    isMuted: false,
+    isVideoEnabled: true,
+    setMeetingId: (meetingId) => set({ meetingId }),
+    setParticipants: (participants) => set({ participants }),
+    setWaitingParticipants: (waitingParticipants) => set({ waitingParticipants }),
+    setWaitingForAdmission: (waitingForAdmission) => set({ waitingForAdmission }),
+    setAdmittedToMeeting: (admittedToMeeting) => set({ admittedToMeeting }),
+    setJoinDeniedMessage: (joinDeniedMessage) => set({ joinDeniedMessage }),
+    setJoinError: (error, code) => set({ joinError: error, joinErrorCode: code ?? null }),
+    setUserRole: (userRole) => set({ userRole }),
+    setMuted: (isMuted) => set({ isMuted }),
+    setVideoEnabled: (isVideoEnabled) => set({ isVideoEnabled }),
+    reset: () => set({
+        meetingId: "",
+        participants: [],
+        waitingParticipants: [],
+        waitingForAdmission: false,
+        admittedToMeeting: false,
+        joinDeniedMessage: null,
+        joinError: null,
+        joinErrorCode: null,
+        userRole: null,
+        isMuted: false,
+        isVideoEnabled: true
+    })
+}));

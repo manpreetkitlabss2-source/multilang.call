@@ -13,6 +13,7 @@ const Home = () => {
   const navigate = useNavigate();
   const [defaultLanguage, setDefaultLanguage] =
     useState<SupportedLanguageCode>(DEFAULT_LANGUAGE);
+  const [meetingIdInput, setMeetingIdInput] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const { user, token, logout } = useAuth();
 
@@ -94,15 +95,37 @@ const Home = () => {
                     ? "Create meeting"
                     : "Only hosts can create meetings"}
             </button>
-            {user ? (
-              <button
-                type="button"
-                onClick={logout}
-                className="w-full rounded-full px-5 py-3 text-sm font-semibold bg-white/10 text-ink"
-              >
-                Sign out
-              </button>
-            ) : null}
+              {user ? (
+                <button
+                  type="button"
+                  onClick={logout}
+                  className="w-full rounded-full px-5 py-3 text-sm font-semibold bg-white/10 text-ink"
+                >
+                  Sign out
+                </button>
+              ) : null}
+            <div className="my-2 h-px bg-white/70" />
+            <label className="flex flex-col gap-2 text-sm font-medium text-ink">
+              <span>Join an existing meeting</span>
+              <input
+                value={meetingIdInput}
+                onChange={(event) => setMeetingIdInput(event.target.value)}
+                placeholder="Enter meeting ID"
+                className="rounded-2xl border border-teal-200 bg-white px-4 py-3 outline-none focus:border-accent"
+              />
+            </label>
+            <button
+              type="button"
+              onClick={() => {
+                const meetingId = meetingIdInput.trim();
+                if (meetingId) {
+                  navigate(`/join/${meetingId}`);
+                }
+              }}
+              className="w-full rounded-full px-5 py-3 text-sm font-semibold bg-white/10 text-ink"
+            >
+              Join meeting
+            </button>
           </div>
         </div>
       </section>

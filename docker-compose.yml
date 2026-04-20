@@ -22,6 +22,7 @@ services:
     volumes:
       - redis-data:/data
 
+
 volumes:
   mysql-data:
   redis-data:

@@ -6,6 +6,7 @@ export const SOCKET_EVENTS = {
   PARTICIPANT_LEAVE: "participant:leave",
   LANGUAGE_CHANGE: "language:change",
   AUDIO_CHUNK: "audio:chunk",
+  TRANSCRIPT_READY: "transcript:ready",
   AUDIO_TRANSLATED: "audio:translated",
   TRANSLATION_STATUS: "translation:status",
   SPEAKING_STATUS: "speaking:status",

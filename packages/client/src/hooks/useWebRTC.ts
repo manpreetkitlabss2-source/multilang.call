@@ -34,11 +34,13 @@ export const useWebRTC = (
       .then((stream) => {
         activeStream = stream;
         if (!active) {
+          console.log("Stream obtained but component is no longer active, stopping tracks");
           stream.getTracks().forEach((track) => track.stop());
           return;
         }
 
         localStreamRef.current = stream;
+        console.log("Obtained local media stream", stream);
         setState((current) => ({ ...current, localStream: stream }));
       })
       .catch((error) => {
